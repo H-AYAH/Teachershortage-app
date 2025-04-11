@@ -67,4 +67,4 @@ if school_name:
     st.markdown(f"**Teachers on Duty (TOD):** {int(tod)}")
     st.markdown(f"**Policy CBE Required:** {int(policy_cbe)}")
     st.markdown(f"**Estimated Streams:** {likely_streams}")
-    st.markdown(f"**Predicted Teacher Shortage:** 🧑‍🏫 **{round(prediction)}**")
+    st.markdown(f"**Predicted Teacher Shortage:** 🧑‍🏫 **{np.round(prediction)}**")
