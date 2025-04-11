@@ -4,6 +4,7 @@ import numpy as np
 import math
 import joblib
 
+
 # Load model and data
 model = joblib.load("mlp_regressor_model.pkl")
 # Load data directly from GitHub Excel
