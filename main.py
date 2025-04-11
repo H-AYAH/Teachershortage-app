@@ -7,8 +7,8 @@ import joblib
 # Load model and data
 model = joblib.load("mlp_regressor_model.pkl")
 # Load data directly from GitHub Excel
-url = "https://raw.githubusercontent.com/H-AYAH/Teachershortage-app/main/Schools(Secondary)%20(11).xlsx"
-df = pd.read_excel(url)
+csv_url = "https://raw.githubusercontent.com/H-AYAH/Teachershortage-app/main/Schools(Secondary) (11).csv"
+df = pd.read_csv(csv_url)
 
 # Define policy brackets
 policy_brackets = [
