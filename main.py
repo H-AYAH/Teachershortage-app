@@ -1,111 +1,69 @@
-import numpy as np
+import streamlit as st
 import pandas as pd
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import numpy as np
+import math
 import joblib
 
-# Load the serialized model and metadata
+# Load model and data
+model = joblib.load("mlp_regressor_model.pkl")
+# Load data directly from GitHub Excel
+url = "https://raw.githubusercontent.com/H-AYAH/Teachershortage-app/main/Schools(Secondary)%20(11).xlsx"
+df = pd.read_excel(url)
 
-def model_load():
-    try:
-        # Ensure proper loading of the tuple (model, metadata)
-        loaded_object = joblib.load('gb_model_metadata .pkl')
-        
-        # If the loaded object is a tuple, unpack it
-        if isinstance(loaded_object, tuple) and len(loaded_object) == 2:
-            loaded_model, loaded_metadata = loaded_object
-            
-        else:
-            raise ValueError("Unexpected format in the loaded model file")
+# Define policy brackets
+policy_brackets = [
+    {'streams': 1, 'enr_min': 0, 'enr_max': 180, 'cbe': 9},
+    {'streams': 2, 'enr_min': 181, 'enr_max': 360, 'cbe': 19},
+    {'streams': 3, 'enr_min': 361, 'enr_max': 540, 'cbe': 28},
+    {'streams': 4, 'enr_min': 541, 'enr_max': 720, 'cbe': 38},
+    {'streams': 5, 'enr_min': 721, 'enr_max': 900, 'cbe': 47},
+    {'streams': 6, 'enr_min': 901, 'enr_max': 1080, 'cbe': 55},
+    {'streams': 7, 'enr_min': 1081, 'enr_max': 1260, 'cbe': 63},
+    {'streams': 8, 'enr_min': 1261, 'enr_max': 1440, 'cbe': 68},
+    {'streams': 9, 'enr_min': 1441, 'enr_max': 1620, 'cbe': 76},
+    {'streams': 10, 'enr_min': 1621, 'enr_max': 1800, 'cbe': 85},
+    {'streams': 11, 'enr_min': 1801, 'enr_max': 1980, 'cbe': 93},
+    {'streams': 12, 'enr_min': 1981, 'enr_max': 2160, 'cbe': 101},
+]
 
-        return loaded_model, loaded_metadata
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading model: {str(e)}")
+# Helper functions
+def get_policy_cbe(enrollment):
+    for bracket in policy_brackets:
+        if bracket['enr_min'] <= enrollment <= bracket['enr_max']:
+            return bracket['cbe']
+    return 93 + 8 * (math.ceil(enrollment / 180) - 11)
 
-# Predict using the loaded model
-def predict_model(model, data):
-    try:
-        y_predict       = model.predict(data)
-        y_predict_proba = model.predict_proba(data)[:, 1]  # For binary classification
-        
-        return y_predict, y_predict_proba
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during prediction: {str(e)}")
+def calculate_likely_streams(cbe_actual):
+    for bracket in policy_brackets:
+        if cbe_actual <= bracket['cbe']:
+            return bracket['streams']
+    return math.ceil((cbe_actual - 93) / 8) + 11
 
-# Load the model and metadata
-loaded_model, loaded_metadata = model_load()
+# Streamlit UI
+st.set_page_config(page_title="Teacher Shortage App", layout="centered")
+st.title("📘 Teacher Shortage Predictor (Kenya)")
 
+school_name = st.selectbox("🏫 Select a School", df['Institution_Name'].unique())
 
-# Create a FastAPI app
-app = FastAPI()
+if school_name:
+    school = df[df['Institution_Name'] == school_name].iloc[0]
+    enrollment = school['TotalEnrolment']
+    tod = school['TOD']
+    policy_cbe = get_policy_cbe(enrollment)
+    likely_streams = calculate_likely_streams(policy_cbe)
 
-# Define the input model based on your data columns
-class InputData(BaseModel):
-            satisfaction_level: float
-            last_evaluation: float
-            number_project: int
-            average_montly_hours: int
-            time_spend_company: int
-            Work_accident: int
-            promotion_last_5years: int
-            salary: str
+    input_data = pd.DataFrame({
+        'TotalEnrolment': [enrollment],
+        'TOD': [tod],
+        'PolicyCBE': [policy_cbe],
+        'Likely_Streams': [likely_streams]
+    })
 
-@app.post("/predict")
-def predict(data: InputData):
-    
-    loaded_model, _ = model_load()
-    # Encoding the salary feature
-    salary_mapping = {'low': 0, 'medium': 1, 'high': 2}
-    salary        = salary_mapping.get(data.salary, -1)
+    prediction = model.predict(input_data)[0]
 
-    if salary == -1:
-        raise HTTPException(status_code=400, detail="Invalid salary value")
-
-    # Convert input data into a DataFrame
-    df = pd.DataFrame([{
-        "satisfaction_level": data.satisfaction_level,
-        "last_evaluation": data.last_evaluation,
-        "number_project": data.number_project,
-        "average_montly_hours": data.average_montly_hours,
-        "time_spend_company": data.time_spend_company,
-        "Work_accident": data.Work_accident,
-        "promotion_last_5years": data.promotion_last_5years,
-        "salary": salary
-    }])
-
-    # Ensure the model has predict() method
-    if not hasattr(loaded_model, "predict"):
-        raise HTTPException(status_code=500, detail="Loaded model is not a valid predictor")
-
-    # Predict using the loaded model
-    prediction, y_predict_proba = predict_model(loaded_model, df)
-    
-    return {"prediction": int(prediction[0]), "probability": float(y_predict_proba[0])}
-
-
-@app.get("/metadata")
-def get_metadata():
-    """Returns model metadata including features, model type, and other info."""
-    
-    if not loaded_metadata:
-        raise HTTPException(status_code=404, detail="Metadata not available")
-    
-    metadata_info = {
-        "model_type": str(type(loaded_model)), 
-        "features": loaded_metadata.get("features", "Not available"),  
-        "training_data_shape": loaded_metadata.get("data_shape", "Unknown"), 
-        "accuracy": loaded_metadata.get("model_evaluation_accuracy", "Unknown"), 
-        "feature_importance": loaded_metadata.get("feature_importance", {}),
-        "hyperparameters": loaded_metadata.get("hyperparameters", {}),
-        "class_distribution": loaded_metadata.get("class_distribution", {}),
-        "model_version": loaded_metadata.get("model_version", "Unknown"),
-        "author": loaded_metadata.get("author", "Unknown"),
-        "training_timestamp": loaded_metadata.get("training_timestamp", "Unknown"),
-    }
-    
-    return metadata_info
-
-
-# Run the app with `uvicorn`:
-# uvicorn main:app --reload
+    st.subheader("📊 Prediction Summary")
+    st.markdown(f"**Enrollment:** {int(enrollment)}")
+    st.markdown(f"**Teachers on Duty (TOD):** {int(tod)}")
+    st.markdown(f"**Policy CBE Required:** {int(policy_cbe)}")
+    st.markdown(f"**Estimated Streams:** {likely_streams}")
+    st.markdown(f"**Predicted Teacher Shortage:** 🧑‍🏫 **{round(prediction)}**")
